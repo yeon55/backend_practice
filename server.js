@@ -1,0 +1,79 @@
+const http = require('http')
+const express = require('express')
+const { PrismaClient } = require('@prisma/client')
+const jwt = require('jsonwebtoken')
+const routes = require('./routes')
+
+const prisma = new PrismaClient()
+
+const app = express()
+
+app.use(express.json())
+app.use(routes) 
+
+app.get('/', (req, res) => {
+  res.json({ message: '/ endpoint' })
+})
+
+app.post('/user/remove', async(req, res) => {
+  try {
+    const { email } = req.body
+    console.log('email: ', email)
+    const deletedUser = await prisma.$queryRaw`
+      DELETE FROM users WHERE email=${email};
+    `
+    return res.status(200).json({ message: "DELETED" })
+  } catch (err) {
+    console.log(err)
+    return res.status(500).json({ message: err.message })
+  }
+}) 
+
+app.post('/user/login', async(req, res) => {
+  try {
+    const { email, pw } = req.body
+
+		if (!email || !pw) {
+			const error = new Error('KEY_ERROR')
+			error.statusCode = 400
+			throw error
+		}
+
+		const user = await prisma.$queryRaw`
+		  SELECT id, password FROM users WHERE email = ${email}
+    `
+		if (user.length === 0) {
+			const error = new Error('INVALID_USER')
+			error.statusCode = 400
+			throw error
+		}
+
+    const isCorrect = bcrypt.compareSync(pw, user[0].password)
+
+    if (!isCorrect) {
+			const error = new Error('INVALID_USER')
+			error.statusCode = 400
+			throw error
+    }
+
+    const token = jwt.sign({ userId: user[0].id }, process.env.SECRET_KEY)
+
+    return res.status(200).json({ message: 'LOGIN_SUCCESS', jwt: token})
+
+  } catch (err) {
+    console.log(err)
+    return res.status(err.statusCode || 500).json({ message: err.message })
+  }
+}) 
+
+const server = http.createServer(app)
+
+const start = async () => { 
+  try {
+    server.listen(8000, () => console.log(`Server is listening on 8000`))
+  } catch (err) { 
+    console.error(err)
+    }
+}
+
+start()
